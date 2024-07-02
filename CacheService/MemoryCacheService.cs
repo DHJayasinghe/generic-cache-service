@@ -8,31 +8,36 @@ public class MemoryCacheService
     private readonly IMemoryCache _cache;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
 
-    public MemoryCacheService(IMemoryCache cache)
-    {
-        _cache = cache;
-    }
+    public MemoryCacheService(IMemoryCache cache) => _cache = cache;
 
-    public async Task<CacheResult<T>> GetOrCreate<T>(string key, Func<ICacheEntry, Task<T>> createItem)
+    public async Task<CacheResult<T>> TryGetValueAsync<T>(string key, Func<Task<T>> createItem = null, TimeSpan? absoluteExpiry = null, TimeSpan? slidingExpiry = null)
     {
-        if (_cache.TryGetValue(key, out T cacheEntry))
-        {
-            return new CacheResult<T>(cacheEntry, true);
-        }
+        if (_cache.TryGetValue(key, out T existingEntry))
+            return new CacheResult<T>(existingEntry, true);
 
         var lockObj = _locks.GetOrAdd(key, new SemaphoreSlim(1, 1));
-
         await lockObj.WaitAsync();
 
         try
         {
-            if (_cache.TryGetValue(key, out cacheEntry))
-            {
+            if (_cache.TryGetValue(key, out T cacheEntry))
                 return new CacheResult<T>(cacheEntry, true);
+
+            if (createItem != null)
+            {
+                T result = await createItem();
+                if (result is not null) // cache positive responses only
+                {
+                    _cache.Set(key, result, new MemoryCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = absoluteExpiry,
+                        SlidingExpiration = slidingExpiry
+                    });
+                }
+                return new CacheResult<T>(result, false);
             }
 
-            cacheEntry = await _cache.GetOrCreateAsync(key, createItem);
-            return new CacheResult<T>(cacheEntry, false);
+            return default; // Handle null case when createItem is null
         }
         finally
         {
@@ -44,11 +49,6 @@ public class MemoryCacheService
     public void Remove(string key)
     {
         _cache.Remove(key);
-    }
-
-    public bool TryGetValue<T>(string key, out T value)
-    {
-        return _cache.TryGetValue(key, out value);
     }
 }
 

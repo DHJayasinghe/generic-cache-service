@@ -15,12 +15,8 @@ namespace CacheServiceApi.Controllers
         [HttpGet]
         public async Task<Response> Get(string key)
         {
-            var cacheValue = await _memoryCache.GetOrCreate(key, async entry =>
-            {
-                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
-                var data = await GetSlowApiDataAsync();
-                return data;
-            });
+            var cacheValue = await _memoryCache.TryGetValueAsync(key, () => GetSlowApiDataAsync(), TimeSpan.FromMinutes(5));
+            if (cacheValue.Value is null) throw new Exception("Failed to fetch data from the API");
 
             return new Response(cacheValue.IsCacheHit, cacheValue.Value);
         }
