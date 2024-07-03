@@ -23,21 +23,18 @@ public class MemoryCacheService
             if (_cache.TryGetValue(key, out T cacheEntry))
                 return new CacheResult<T>(cacheEntry, true);
 
-            if (createItem != null)
-            {
-                T result = await createItem();
-                if (result is not null) // cache positive responses only
-                {
-                    _cache.Set(key, result, new MemoryCacheEntryOptions
-                    {
-                        AbsoluteExpirationRelativeToNow = absoluteExpiry,
-                        SlidingExpiration = slidingExpiry
-                    });
-                }
-                return new CacheResult<T>(result, false);
-            }
+            if (createItem == null) return default;
 
-            return default; // Handle null case when createItem is null
+            T result = await createItem();
+            if (result is not null) // cache positive responses only
+            {
+                _cache.Set(key, result, new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = absoluteExpiry,
+                    SlidingExpiration = slidingExpiry
+                });
+            }
+            return new CacheResult<T>(result, false);
         }
         finally
         {
